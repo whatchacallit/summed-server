@@ -1,0 +1,63 @@
+convert:
+  cmd: python -m spacy run convert
+  script:
+    - python scripts/convert.py en assets/docs_doctypes_training.jsonl corpus/train.spacy
+    - python scripts/convert.py en assets/docs_doctypes_eval.jsonl corpus/dev.spacy
+  deps:
+    - path: assets/docs_doctypes_training.jsonl
+      md5: 528ca27c7bc3be4bb11e8ac2fe8bf3d6
+    - path: assets/docs_doctypes_eval.jsonl
+      md5: cab99feda07e9f0cbac70aec3550631a
+    - path: scripts/convert.py
+      md5: 81a27c7679f32363bca9cbcd12a366d7
+  outs:
+    - path: corpus/train.spacy
+      md5: b39b9c46abd7a7a57514240d68cf58c5
+    - path: corpus/dev.spacy
+      md5: d6e4942e057ca625fc6f3f815955b887
+  spacy_version: 3.0.5
+  spacy_git_version: 53a3b967a
+train:
+  cmd: python -m spacy run train
+  script:
+    - python -m spacy train configs/config.cfg --output training/ --paths.train corpus/train.spacy
+      --paths.dev corpus/dev.spacy --nlp.lang en --gpu-id -1
+  deps:
+    - path: configs/config.cfg
+      md5: a816f3124515782349856290f1d7f384
+    - path: corpus/train.spacy
+      md5: b39b9c46abd7a7a57514240d68cf58c5
+    - path: corpus/dev.spacy
+      md5: d6e4942e057ca625fc6f3f815955b887
+  outs:
+    - path: training/model-best
+      md5: 1453b843be5d19123d9375a334e75514
+  spacy_version: 3.0.5
+  spacy_git_version: 53a3b967a
+evaluate:
+  cmd: python -m spacy run evaluate
+  script:
+    - python -m spacy evaluate training/model-best corpus/dev.spacy --output training/metrics.json
+  deps:
+    - path: corpus/dev.spacy
+      md5: d6e4942e057ca625fc6f3f815955b887
+    - path: training/model-best
+      md5: 1453b843be5d19123d9375a334e75514
+  outs:
+    - path: training/metrics.json
+      md5: 9cf79e2210245470a88ab453faeeae75
+  spacy_version: 3.0.5
+  spacy_git_version: 53a3b967a
+package:
+  cmd: python -m spacy run package
+  script:
+    - python -m spacy package training/model-best packages --name medical_doctypes
+      --version 0.0.0 --force
+  deps:
+    - path: training/model-best
+      md5: 1453b843be5d19123d9375a334e75514
+  outs:
+    - path: packages/en_medical_doctypes-0.0.0/dist/en_medical_doctypes-0.0.0.tar.gz
+      md5: 51ea889ab7ade35882bbee5cef97a87b
+  spacy_version: 3.0.5
+  spacy_git_version: 53a3b967a
