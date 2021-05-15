@@ -99,13 +99,15 @@ class TextAnalyzer(object):
         # )
         # response = client.recognize_entities([text], language=language)
         headers = {}
-        url = "https://jargonbuster-analytics.azurewebsites.net/text/analytics/v3.1-preview.4/entities/health"
+        url = (
+            f"{self._azure_ta4h_endpoint}/text/analytics/v3.1-preview.4/entities/health"
+        )
         resp = requests.post(
             url,
             headers=headers,
             json={"documents": [{"id": 0, "language": language, "text": text}]},
         )
-
+        resp.raise_for_status()
         result = []
         if resp.ok:
             docs = resp.json()["documents"]
@@ -140,10 +142,10 @@ class TextAnalyzer(object):
     #
     # Returns the top-n ranked Sentences from the list.
     # Uses the "lemmatized" version of the text
-    # Preserves the order from within the original sentences
+    # Preserves the relative order from within the original document (e.g. it is *not* sorted by score)
     #
     #
-    def top_sentences(self, sentences: List[Sentence], num_sentences: int = 3):
+    def top_sentences(self, sentences: List[Sentence], num_sentences: int = 5):
 
         # Create full text from lemmatized sentences.
         # log.info(sentences)
@@ -158,11 +160,11 @@ class TextAnalyzer(object):
 
         # go through all the sentences from the original text...
         for original_sentence in sentences:
-            # check if there's a sentence in the summary that matches the lemmatized text
-            for sentence in summary:
+            # check if the sentence is the summary. If yes, append to
+            for summary_sentence in summary:
                 if (
                     str(original_sentence.lemmatized_text).strip()
-                    == str(sentence).strip()
+                    == str(summary_sentence).strip()
                 ):
                     ranked_sentences.append(original_sentence)
                     break

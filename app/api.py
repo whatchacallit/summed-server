@@ -1,5 +1,7 @@
 # Basic imports
-import os, json, logging, tempfile
+from app import bing_search, cognitive_services, dictionary
+from app.renderer import HTMLRenderer
+import os, logging, tempfile
 from typing import List, Text
 from dotenv import load_dotenv, find_dotenv
 import requests
@@ -9,8 +11,6 @@ from urllib.parse import urlencode
 # Init logging
 import logging
 
-log = logging.getLogger(__name__)
-
 
 # FastAPI, Starlette, Pydantic etc...
 import fastapi
@@ -18,28 +18,37 @@ from fastapi import FastAPI
 from fastapi.datastructures import UploadFile
 from fastapi.params import File
 from fastapi.exceptions import HTTPException
-from starlette.responses import RedirectResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 # Spacy and lang models
 import spacy
 
 
 from app.textanalyzer import TextAnalyzer
+from app.utils import init_api
+
+from app.bing_search import bing_search
 
 
 #
 # Import the API models (request / response models for API calls)
 #
 from app.api_models import (
-    BaseResponse,
+    ImmersiveReaderTokenResponse,
     Lemma,
-    AnalzyeRequest,
+    AnalyzeRequest,
     AnalyzeResponse,
     DefinitionResponse,
     NamedEntity,
     NounChunk,
+    RenderRequest,
+    SearchResponse,
     Sentence,
+    TranslateResponse,
 )
+
+
+log = logging.getLogger(__name__)
 
 
 # If running in an (AKS) cluster...
@@ -52,12 +61,16 @@ prefix = os.getenv("CLUSTER_ROUTE_PREFIX", "").rstrip("/")
 
 
 api = FastAPI(
-    title="SumMed API",
+    title="SumMed API Server",
     version="v1",
     description="SumMed is an open-source solution to make medical documents easier to understand for patients, healthcare workers and others. \
-        Based on FastAPI, spaCy, Azure Cloud services and best-of-breed open source NLP components and models.",
+        Using FastAPI, spaCy, Azure Cloud services and selected open source NLP components and models.",
     openapi_prefix=prefix,
 )
+
+# Configure CORS, logging etc.
+init_api(api, log)
+
 
 #
 # / gets redirected to API docs
@@ -68,12 +81,48 @@ async def docs_redirect():
     return RedirectResponse(f"docs")
 
 
+@api.get(
+    "/translate",
+    description="Translate text into a target language.",
+    response_model=TranslateResponse,
+    tags=["text_analysis"],
+)
+async def get_translate(text: str, to: str = "de") -> TranslateResponse:
+    result = await cognitive_services.translate(text=text, to=to)
+
+    return result
+
+
+@api.get(
+    "/immersive_reader_token",
+    description="Retrieve an authorization token for the Microsoft Immersive Reader UI component.",
+    response_model=ImmersiveReaderTokenResponse,
+    tags=["frontend"],
+)
+async def get_ir_token() -> ImmersiveReaderTokenResponse:
+    result = await cognitive_services.getIRToken()
+
+    return result
+
+
 @api.post(
-    "/entities",
+    "/render",
+    description="Render an Analysis response into HTML",
+    response_class=HTMLResponse,
+    tags=["frontend"],
+)
+async def post_render(request: RenderRequest) -> HTMLResponse:
+    renderer = HTMLRenderer()
+    return renderer(request)
+
+
+@api.post(
+    "/analyze",
     description="Extract the named entities from a input text",
     response_model=AnalyzeResponse,
+    tags=["text_analysis"],
 )
-async def get_entities(request: AnalzyeRequest) -> AnalyzeResponse:
+async def post_analyze(request: AnalyzeRequest) -> AnalyzeResponse:
     language, text, model, num_sentences = map(
         dict(request).get, ("language", "text", "model", "num_sentences")
     )
@@ -81,7 +130,7 @@ async def get_entities(request: AnalzyeRequest) -> AnalyzeResponse:
     analyzer = TextAnalyzer(text, language, model)
     nlp = analyzer()
 
-    analyzed_text = text.strip().replace("\n", " ")
+    analyzed_text = text.strip()  # .replace("\n", " ")
 
     # Calls the spaCy NLP pipeline
     doc = nlp(analyzed_text)
@@ -131,7 +180,7 @@ async def get_entities(request: AnalzyeRequest) -> AnalyzeResponse:
             start=sentence.start_char,
             end=sentence.end_char,
         )
-        for sentence in doc.sents
+        for sentence in doc.sents  # TODO check if we can improve the default spaCy sentencizer
     ]
 
     # Get the top-n sentences (the "summary")
@@ -141,8 +190,8 @@ async def get_entities(request: AnalzyeRequest) -> AnalyzeResponse:
         language=analyzer.language or None,
         model=analyzer.model or None,
         text=analyzed_text,
-        # lemmatized_text=lemma_text or None,
         entities=entities or None,
+        # lemmatized_text=lemma_text or None,
         # entities_text=entities_text or None,
         # noun_chunks=noun_chunks or None,
         # noun_chunks_text=noun_chunks_text or None,
@@ -154,45 +203,44 @@ async def get_entities(request: AnalzyeRequest) -> AnalyzeResponse:
     return response
 
 
+@api.get(
+    "/search",
+    response_model=SearchResponse,
+    summary="Search for related medical documents",
+    description="Search for medical documents related to a search query string. May find webpages, images and videos.",
+    response_description="The search results",
+    tags=["search"],
+)
+async def get_search(q: str) -> SearchResponse:
+    try:
+        response = bing_search.search(q)
+    except Exception as e:
+        log.error(str(e))
+        message = f"Error calling search services for '{q}'"
+        raise HTTPException(500, message)
+
+    return response
+
+
 #
-# Get a defiition for a medical term, using a medical dictionary
+# Get a definition for a medical term, using a medical dictionary
 #
 @api.get(
     "/definition",
     description="Lookup a medical term in the Merriam-Webster medical dictionary. ",
     response_model=DefinitionResponse,
+    tags=["search"],
 )
 async def get_definition(term: str) -> DefinitionResponse:
 
-    apiKey = os.environ.get("MW_API_KEY", None)
-    if not apiKey:
-        raise HTTPException(
-            500,
-            "Server configuration error: please configure a valid API key for querying dictionary",
-        )
-
-    sanitized_term = urlencode(term.strip())
-    url = f"https://www.dictionaryapi.com/api/v3/references/medical/json/{sanitized_term}?key={apiKey}"
-
     try:
-
-        resp = requests.get(url)
-        if resp.ok:
-            jsonResp = resp.json()
-            if jsonResp:
-                definitions = jsonResp
-                if definitions:
-                    return DefinitionResponse(term=term, definitions=definitions)
-
-        # Something went wrong
-        return DefinitionResponse(
-            term=term, definitions=[], error=f"Error looking up term: {resp.text}"
-        )
+        response = dictionary.lookup_term(term)
+        return response
 
     except Exception as e:
-        log.error(str(e))
+        log.error(e)
         message = f"Error querying dictionary for '{term}'"
-        return DefinitionResponse(term=term, error=message)
+        raise HTTPException(500, message)
 
 
 # Export

@@ -48,7 +48,7 @@ class SentenceRequest(NLPBaseRequest):
     pass
 
 
-class AnalzyeRequest(NLPBaseRequest):
+class AnalyzeRequest(NLPBaseRequest):
     num_sentences: Optional[int] = 3
 
     class Config:
@@ -65,6 +65,17 @@ More than 80% of cases are discovered when a person detects such a lump with the
 #
 class BaseResponse(BaseModel):
     error: Optional[str]
+
+
+class TranslateResponse(BaseModel):
+    """
+    Response for a text translation request
+    """
+
+    from_language: str
+    from_text: str
+    to_language: str
+    to_text: str
 
 
 class NLPBaseResponse(BaseResponse):
@@ -94,11 +105,94 @@ class AnalyzeResponse(NLPBaseResponse):
                 "text": "Hello again! The quick brown fox jumps over the lazy dog. A second time !",
                 "entities": [],
                 "health_entities": [{"text": "..."}],
-                "sentences": [{"text": "Hello again!"}, {"text": "..."}],
+                "sentences": [{"text": "Hello again!"}],
             }
         }
 
 
+class ImmersiveReaderTokenResponse(BaseResponse):
+    token: str
+    subdomain: str
+
+
+class TermDefinition(BaseModel):
+    id: str
+    term: str
+    type: str
+    text: str
+
+
 class DefinitionResponse(BaseResponse):
     term: str
-    definitions: Optional[list]
+    definitions: Optional[List[TermDefinition]]
+
+
+class RenderRequest(AnalyzeResponse):
+    """
+    Request to renders the result a previous "analyze" response  into an output format, such as HTML/...
+
+    """
+
+    format: Optional[str] = "html"
+
+
+class Page(BaseModel):
+    """
+    A related webpage
+
+    - **title** Title of the web page
+    - **text** Text (usually a summary)
+    - **url** The web address
+    """
+
+    title: str
+    text: str
+    url: str
+
+
+class Image(BaseModel):
+    """
+    An Image Url
+
+    - **text** Short text/ description of the image
+    - **url** The web address
+    - **hostPageUrl** The web address of the webpage that hosts the image
+    - **webSearchUrl** The web adress to do a Microsoft Bing "similarity" search
+    """
+
+    text: str
+    url: str
+    hostPageUrl: str
+    thumbnailUrl: str
+    webSearchUrl: str
+
+
+class Video(BaseModel):
+    """
+    An Video Url
+
+    - **text** Short text/ description of the video
+    - **url** The web address
+    - **hostPageUrl** The web address of the webpage that hosts the video
+    - **webSearchUrl** The web adress to do a Microsoft Bing "similarity" search
+    """
+
+    text: str
+    url: str
+    hostPageUrl: str
+    thumbnailUrl: str
+    webSearchUrl: str
+
+
+class SearchResponse(BaseModel):
+    """
+    Search responses, contain pages, images and videos
+
+    - **pages** List of (web) pages
+    - **images** List of images
+    - **videos** List of videos
+    """
+
+    pages: Optional[List[Page]]
+    images: Optional[List[Image]]
+    videos: Optional[List[Video]]

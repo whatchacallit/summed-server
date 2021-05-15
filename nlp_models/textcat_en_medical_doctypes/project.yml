@@ -9,6 +9,7 @@ vars:
   # Set your GPU ID, -1 is CPU
   gpu_id: -1
   version: "0.0.0"
+  all_input: "docs_doctypes_all.xlsx"
   train: "docs_doctypes_training.jsonl"
   dev: "docs_doctypes_eval.jsonl"
   config: "config.cfg"
@@ -20,6 +21,8 @@ directories: ["assets", "corpus", "configs", "training", "scripts", "packages"]
 # Assets that should be downloaded or available in the directory. We're shipping
 # them with the project, so they won't have to be downloaded.
 assets:
+  - dest: "assets/${vars.all_input}"
+    description: "All data, as an excel sheet with columns 'text, cats'" 
   - dest: "assets/${vars.train}"
     description: "Demo training data"
   - dest: "assets/${vars.dev}"
@@ -41,15 +44,18 @@ workflows:
 # shown when executing "spacy project run [optional command] [path] --help".
 commands:
   - name: "convert"
-    help: "Convert the data to spaCy's binary format"
+    help: "Convert the data to spaCy's binary format. Data is converted/split from full Excel to jsonl first."
     script:
+      - "python scripts/xls2jsonl.py ${vars.lang} assets/${vars.all_input} assets/${vars.all_input}.jsonl"
       - "python scripts/convert.py ${vars.lang} assets/${vars.train} corpus/train.spacy"
       - "python scripts/convert.py ${vars.lang} assets/${vars.dev} corpus/dev.spacy"
     deps:
+      - "assets/${vars.all.input}"
       - "assets/${vars.train}"
       - "assets/${vars.dev}"
       - "scripts/convert.py"
     outputs:
+      - "assets/${vars.all.output}"
       - "corpus/train.spacy"
       - "corpus/dev.spacy"
 
