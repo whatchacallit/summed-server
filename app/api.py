@@ -1,5 +1,5 @@
 # Basic imports
-from app import bing_search, cognitive_services, dictionary
+from app import bing_search, cognitive_services, dictionary, text_extract
 from app.renderer import HTMLRenderer
 import os, logging, tempfile
 from typing import List, Text
@@ -34,6 +34,7 @@ from app.bing_search import bing_search
 # Import the API models (request / response models for API calls)
 #
 from app.api_models import (
+    ExtractResponse,
     ImmersiveReaderTokenResponse,
     Lemma,
     AnalyzeRequest,
@@ -116,6 +117,19 @@ async def post_render(request: RenderRequest) -> HTMLResponse:
     return renderer(request)
 
 
+@api.get(
+    "/extract",
+    description="Extract text and metadata from a publicly reachable URL",
+    response_model=ExtractResponse,
+    tags=["text_extract"],
+)
+async def get_extract(url: str) -> ExtractResponse:
+    extractor = text_extract.Extractor()
+    options = {}
+    result = extractor(url, options)
+    return result
+
+
 @api.post(
     "/analyze",
     description="Extract the named entities from a input text",
@@ -130,7 +144,7 @@ async def post_analyze(request: AnalyzeRequest) -> AnalyzeResponse:
     analyzer = TextAnalyzer(text, language, model)
     nlp = analyzer()
 
-    analyzed_text = text.strip()  # .replace("\n", " ")
+    analyzed_text = text.strip().replace("\n", " ")
 
     # Calls the spaCy NLP pipeline
     doc = nlp(analyzed_text)
@@ -154,16 +168,16 @@ async def post_analyze(request: AnalyzeRequest) -> AnalyzeResponse:
     # Named Entities found from Azure Text Analytics for Health (if configured)
     #
     entities_medical = analyzer.get_health_entities(analyzed_text)
-    entities = entities_medical
+    # entities = entities_medical
 
     # Noun chunks with their position in the original text.
     # These are usually good keywords e.g. for a custom web search.
-    noun_chunks = [
-        NounChunk(text=chunk.text, start=chunk.start_char, end=chunk.end_char)
-        for chunk in doc.noun_chunks
-    ]
-    noun_chunks_text = [chunk.text for chunk in doc.noun_chunks]
-    noun_chunks_text.sort()
+    # noun_chunks = [
+    #    NounChunk(text=chunk.text, start=chunk.start_char, end=chunk.end_char)
+    #    for chunk in doc.noun_chunks
+    # ]
+    # noun_chunks_text = [chunk.text for chunk in doc.noun_chunks]
+    # noun_chunks_text.sort()
 
     lemma = [Lemma(text=token.lemma_, is_stopword=token.is_stop) for token in doc]
     lemma_text = " ".join([token.lemma_ for token in doc if not token.is_stop])
@@ -180,7 +194,9 @@ async def post_analyze(request: AnalyzeRequest) -> AnalyzeResponse:
             start=sentence.start_char,
             end=sentence.end_char,
         )
-        for sentence in doc.sents  # TODO check if we can improve the default spaCy sentencizer
+        for sentence in doc.sents
+        if len(sentence.text) >= 9
+        # TODO check if we can improve the default spaCy sentencizer
     ]
 
     # Get the top-n sentences (the "summary")
@@ -191,6 +207,7 @@ async def post_analyze(request: AnalyzeRequest) -> AnalyzeResponse:
         model=analyzer.model or None,
         text=analyzed_text,
         entities=entities or None,
+        health_entities=entities_medical or None,
         # lemmatized_text=lemma_text or None,
         # entities_text=entities_text or None,
         # noun_chunks=noun_chunks or None,
@@ -213,7 +230,7 @@ async def post_analyze(request: AnalyzeRequest) -> AnalyzeResponse:
 )
 async def get_search(q: str) -> SearchResponse:
     try:
-        response = bing_search.search(q)
+        response = bing_search(q)
     except Exception as e:
         log.error(str(e))
         message = f"Error calling search services for '{q}'"

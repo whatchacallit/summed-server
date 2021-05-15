@@ -64,10 +64,10 @@ More than 80% of cases are discovered when a person detects such a lump with the
 # Response Models (= schema for API responses)
 #
 class BaseResponse(BaseModel):
-    error: Optional[str]
+    error: Optional[str] = None
 
 
-class TranslateResponse(BaseModel):
+class TranslateResponse(BaseResponse):
     """
     Response for a text translation request
     """
@@ -76,6 +76,15 @@ class TranslateResponse(BaseModel):
     from_text: str
     to_language: str
     to_text: str
+
+
+class ExtractResponse(BaseResponse):
+    sourceUrl: str
+    text: str
+    document_class: str
+    language: str
+    mediatype: str
+    metadata: Optional[dict] = None
 
 
 class NLPBaseResponse(BaseResponse):

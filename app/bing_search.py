@@ -1,5 +1,5 @@
 from app.api_models import SearchResponse
-import os, requests
+import os, requests, urllib.parse
 
 #
 # Get the endpoints, API keys etc from the env
@@ -14,6 +14,20 @@ image_search_url = f"{search_url}/images/search"
 video_search_url = f"{search_url}/videos/search"
 
 assert subscription_key
+
+
+def bing_search_hosted_ui(q: str, language="en"):
+    """
+    Constructs and returns the Bing Custom Search Hosted UI URL, based on the query string
+    """
+    market = "en-US"
+    queryString = urllib.parse.quote(q.strip())
+    url = f"https://ui.customsearch.ai/hosted-page?customconfig={custom_config_key}?version=latest&market={market}&q={queryString}"
+
+    return url
+
+
+# https://ui.customsearch.ai/hosted-page?customconfig=48d85588-61c9-486c-ac87-9269ce23c5c5&version=latest&market=en-US&q=
 
 
 def bing_search(q: str) -> SearchResponse:
